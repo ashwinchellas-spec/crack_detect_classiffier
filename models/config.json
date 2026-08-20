@@ -1,0 +1,8 @@
+{
+  "img_size": 128,
+  "class_names": [
+    "crack",
+    "no_crack"
+  ],
+  "val_accuracy": 0.9916666746139526
+}
