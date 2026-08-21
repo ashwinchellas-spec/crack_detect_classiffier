@@ -14,12 +14,19 @@ large batches of images and flag candidates for human review.
 ## Architecture
 
 ```
-Image upload → FastAPI /predict → CNN (TensorFlow) → prediction + confidence
-                                          │
-                                    SQLite (SQL logging of every request)
-                                          │
-                                   GET /logs (SQL summary of history)
+Streamlit UI (frontend)  →  HTTP  →  FastAPI + Docker (backend, on Render)
+                                            │
+                                      CNN (TensorFlow)
+                                            │
+                                      SQLite (SQL logging)
 ```
+
+The frontend and backend are deployed and run independently — the
+Streamlit app has no TensorFlow dependency at all; it just uploads an
+image to the API and displays the JSON response. This mirrors how ML
+models are served in production: a model API behind a stable contract,
+with one or more separate clients (a web UI, a mobile app, another
+service) consuming it over HTTP.
 
 - **Data**: Synthetic concrete-texture images with randomly drawn crack
   lines, standing in for the real
@@ -27,7 +34,7 @@ Image upload → FastAPI /predict → CNN (TensorFlow) → prediction + confiden
   (40,000 labeled images). See `src/generate_data.py` for how to swap in the
   real dataset — same folder structure, no downstream changes needed.
 - **Model**: Small CNN (3 conv blocks + dense head) trained from scratch —
-  98.3% validation accuracy on the synthetic set. `src/model.py` /
+  98–99% validation accuracy on the synthetic set. `src/model.py` /
   `src/train.py` also documents how to switch to MobileNetV2 transfer
   learning for better generalization to real photos, once you have
   unrestricted internet access to download ImageNet weights.
@@ -35,8 +42,10 @@ Image upload → FastAPI /predict → CNN (TensorFlow) → prediction + confiden
   timestamp) is logged to SQLite via `api/db.py`. `GET /logs` returns both
   the most recent predictions and a SQL `GROUP BY` summary per class —
   this is the SQL skill-building part of the project, not just storage.
-- **Deployment**: FastAPI service (`api/main.py`) + `Dockerfile`, so it runs
-  identically locally or on any container platform.
+- **Backend deployment**: FastAPI service (`api/main.py`) + `Dockerfile`,
+  deployed on [Render](https://render.com)'s free Docker web-service tier.
+- **Frontend deployment**: Streamlit app (`streamlit_app/app.py`), deployed
+  separately on Streamlit Community Cloud, pointed at the live backend URL.
 
 ## API
 
@@ -57,12 +66,15 @@ crack-defect-classifier/
 │   ├── model.py            # CNN architecture (+ transfer-learning notes)
 │   └── train.py             # training + evaluation
 ├── api/
-│   ├── main.py              # FastAPI app
+│   ├── main.py              # FastAPI backend
 │   └── db.py                 # SQLite logging + SQL summary queries
+├── streamlit_app/
+│   ├── app.py                # Streamlit frontend (calls the API)
+│   └── requirements.txt      # lightweight — no TensorFlow needed here
 ├── models/                  # trained model + config (committed, ~360KB)
 ├── data/                    # images + SQLite log (gitignored, regenerate locally)
 ├── Dockerfile
-├── requirements.txt
+├── requirements.txt         # backend deps (includes TensorFlow)
 └── README.md
 ```
 
@@ -100,14 +112,22 @@ Then hit the same endpoints at `http://localhost:8000`.
 
 ## Deployment
 
-Deployed on [Render](https://render.com)'s free web-service tier (supports
-Docker deploys from a GitHub repo directly — no credit card required for the
-free plan, though the free tier spins down after inactivity and takes ~30s
-to wake up on the next request).
-
+**Backend** (FastAPI + Docker) is deployed on [Render](https://render.com)'s
+free web-service tier (supports Docker deploys from a GitHub repo directly).
 To deploy your own copy: create a new **Web Service** on Render, connect
 this GitHub repo, choose **Docker** as the environment, and it builds
 automatically from the `Dockerfile`.
+
+**Frontend** (Streamlit) is deployed separately on
+[Streamlit Community Cloud](https://share.streamlit.io) — free, deploys
+straight from GitHub. When setting it up: main file path
+`streamlit_app/app.py`, and it'll automatically pick up
+`streamlit_app/requirements.txt` (lightweight — no TensorFlow) instead of
+the root `requirements.txt`.
+
+Once both are live, open the Streamlit app, confirm the sidebar "API base
+URL" points at your deployed Render backend, and upload an image to test
+end to end.
 
 ## Notes on the synthetic data
 
